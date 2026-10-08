@@ -4,8 +4,8 @@
   1. the piece, opening on the lit street (the cut lands at 4.5 s), with the
      pointer drawn where the demo path puts it and hidden in the close-ups
   2. the other ending: the battery dies
-  3. GPU Canvas taken apart: the script's albedo and emission buffers beside
-     the lit result (real renders, `--data=view=1|2`)
+  3. GPU Canvas taken apart: one wipe from the script's albedo buffer to its
+     emission buffer (brightened) to the lit result (real renders, `--data=view=1|2`)
   4. a real terminal session (tools/session/session.txt), replayed
   5. credits on a clean ground
 
@@ -140,37 +140,46 @@ def heading(d, title, sub, step=None):
         d.text((W - 64, 52), step, font=F(PLEX_SB, 18), fill=GOLD, anchor='ra')
 
 
-# ---- 3. GPU Canvas taken apart
-def breakdown_frame(t, alb, emi, lit):
-    im = Image.new('RGB', (W, H), BG)
-    d = ImageDraw.Draw(im)
-    heading(d, 'GPU Canvas, taken apart',
-            'main.luau draws the street twice a frame; one WGSL pass lights it')
-    pw, ph = 480, 300
-    xs = [56, 560, 1064]
-    y0 = 300
-    items = [(alb, 'albedo', 'what things are made of (sky left empty)'),
-             (emi, 'emission', 'what glows: windows, eyes, moon, candle'),
-             (lit, 'light.wgsl', 'moonlight, window spill, the torch, fog')]
-    for k, (src, name, note) in enumerate(items):
-        a = ease((t - 0.1 - k * 0.45) / 0.35)
-        if a <= 0:
-            continue
-        # the street only: the RML HUD is not part of the script's buffers
-        th = src.crop((300, 150, 1300, 775)).resize((pw, ph), Image.LANCZOS)
-        yy = int(y0 + (1 - a) * 30)
-        tile = Image.blend(Image.new('RGB', (pw, ph), BG), th, a)
-        im.paste(tile, (xs[k], yy))
-        d.rounded_rectangle((xs[k] - 1, yy - 1, xs[k] + pw, yy + ph), 8,
-                            outline=GOLD if k == 2 else (60, 62, 72), width=2)
-        col = tuple(int(BG[i] + (c - BG[i]) * a) for i, c in enumerate(GOLD))
-        mut = tuple(int(BG[i] + (c - BG[i]) * a) for i, c in enumerate(MUTED))
-        d.text((xs[k], yy + ph + 22), f'{k + 1} · {name}', font=F(PLEX_SB, 24), fill=col)
-        d.text((xs[k], yy + ph + 58), note, font=F(PLEX, 19), fill=mut)
-        if k > 0:
-            d.text((xs[k] - 12, y0 + ph // 2), '+' if k == 1 else '→', font=F(PLEX_SB, 34),
-                   fill=col, anchor='rm')
-    return fade_black(im, ease(t / 0.25) * (1 - ease((t - film.BREAK_DUR + 0.25) / 0.25)))
+# ---- 3. GPU Canvas taken apart: one full-frame wipe through the three stages
+def glow_for_display(emi, lit):
+    # the emission buffer is mostly black in the cut (it is only what glows);
+    # brightened and bloomed here so it reads on screen. The RML HUD sits on
+    # top of every view identically, so pixels equal to the lit frame are HUD
+    # and keep their real brightness.
+    from PIL import ImageChops, ImageEnhance, ImageFilter
+    b = ImageEnhance.Brightness(emi).enhance(3.2)
+    b = ImageChops.add(b, b.filter(ImageFilter.GaussianBlur(14)))
+    hud = ImageChops.difference(emi, lit).convert('L').point(lambda v: 255 if v < 6 else 0)
+    hud = hud.filter(ImageFilter.MaxFilter(3))
+    return Image.composite(emi, b, hud)
+
+
+def breakdown_frame(t, alb, glo, lit):
+    stages = [(alb, '1 · albedo', 'main.luau draws what things are made of; the sky is left empty'),
+              (glo, '2 · emission', 'the second picture: only what glows (brightened for display)'),
+              (lit, '3 · light.wgsl', 'one GPU pass: moonlight, window spill, the torch, bloom, fog')]
+    w1 = ease((t - 0.85) / 0.45)      # albedo -> emission
+    w2 = ease((t - 1.85) / 0.45)      # emission -> lit
+    im = alb.copy()
+    for k, w in ((1, w1), (2, w2)):
+        if w > 0:
+            x = int(W * w)
+            im.paste(stages[k][0].crop((0, 0, x, H)), (0, 0))
+            if 0 < x < W:
+                d = ImageDraw.Draw(im)
+                d.rectangle((x - 2, 0, x + 1, H), fill=GOLD)
+    k = 2 if t >= 2.07 else (1 if t >= 1.07 else 0)
+    _, name, note = stages[k]
+    layer = Image.new('RGBA', im.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    d.rounded_rectangle((W // 2 - 325, 150, W // 2 + 455, 290), 22, fill=(10, 12, 18, 225),
+                        outline=(255, 200, 97, 140), width=2)
+    d.text((W // 2 + 65, 180), 'GPU Canvas, taken apart', font=F(PLEX, 22), fill=MUTED + (255,), anchor='mm')
+    d.text((W // 2 + 65, 220), name, font=F(PLEX_SB, 40), fill=GOLD + (255,), anchor='mm')
+    d.text((W // 2 + 65, 262), note, font=F(PLEX, 22), fill=CREAM + (255,), anchor='mm')
+    base = im.convert('RGBA')
+    base.alpha_composite(layer)
+    return fade_black(base.convert('RGB'), ease(t / 0.25) * (1 - ease((t - film.BREAK_DUR + 0.25) / 0.25)))
 
 
 # ---- 4. the terminal, replayed from a real capture
@@ -273,6 +282,7 @@ def main():
     alb = frame(seq('albedo')[0], 0)
     emi = frame(seq('emit')[0], 0)
     lit = frame(main_dir, int(round((film.BREAK_FILM - film.PIECE_START) * FPS)))
+    glo = glow_for_display(emi, lit)
     shot = Image.open(os.path.join(ROOT, 'tools', 'session', 'albedo.png')).convert('RGB')
     mono = ImageFont.truetype(MONO, 19)
     sched = film.term_schedule()
@@ -310,7 +320,7 @@ def main():
 
     # 3, 4, 5
     for i in range(int(film.BREAK_DUR * FPS)):
-        emit(breakdown_frame(i / FPS, alb, emi, lit))
+        emit(breakdown_frame(i / FPS, alb, glo, lit))
     for i in range(int(film.TERM_DUR * FPS)):
         emit(terminal_frame(i / FPS, sched, shot, mono))
     for i in range(int(film.CRED_DUR * FPS)):

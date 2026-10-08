@@ -41,7 +41,7 @@ Video: [media/kahraba.mp4](media/kahraba.mp4)
 | **Data binding** | a `Street` view model: `power`, `phase`, `found`, battery, captions (EN/AR), card text, street-light level. Text runs, the battery bar width, and the neon signs' opacity are bound through range-mapper converters |
 | **State machine** | four layers: *Lever* (the switch, with an overshooting throw and the plate knocking the wall), *Story* (intro / hunt / rescued / ending), *Cards* (one state per jinn found), *Battery* (calm, or red and breathing below 20%) |
 
-Hand-tuned in the markup (tuned by eye, frame by frame against screenshots; an Editor pass on top follows): named ease curves (`SNAP_OUT`, `SLOW_IN`, `SETTLE`, `THROW` in `tools/gen_scene.py`),
+Hand-tuned in the markup (tuned by eye, frame by frame against screenshots): named ease curves (`SNAP_OUT`, `SLOW_IN`, `SETTLE`, `THROW` in `tools/gen_scene.py`),
 the lever's 240 ms overshoot, the 3-frame plate knock, the card's elastic slide and 2.5 s hold, the end card
 waiting 190 frames for the parade. In the script: the story timing (`CUT_AFTER`, `WARN_AT`, `DWELL`), the
 hand-placed torch path the demo follows, each jinn's pose and its own hand-picked palette

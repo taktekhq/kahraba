@@ -1730,9 +1730,15 @@ local function drawStreetEmit(self: Scene, r: Renderer, feather: number)
             drawJinnLights(self, r, c, vis)
         end
         if c.found and not reacting and self.phase ~= 3 and c.gone < 1.4 and c.alpha > 0.01 then
-            -- a caught jinn burns at its edges in its own colour as it flees
-            local a = c.alpha * (1 - c.gone / 1.4)
-            drawParts(self, r, bodyParts(self, c), 1, mixc(BLACK, c.eyes, 0.7 * a), if full then 1.6 else 3)
+            -- a caught jinn burns at its edges as it flees: an ember line only in
+            -- the glow buffer, so the shader blooms it into a burn instead of a
+            -- flat outline, flickering and fading with the body
+            if not full then
+                local a = c.alpha * c.alpha * (1 - c.gone / 1.4)
+                local flick = 0.65 + 0.35 * math.sin(self.t * 31 + c.x) * math.sin(self.t * 13.7 + c.y)
+                local ember = mixc(c.eyes, rgb(255, 120, 40), 0.55)
+                drawParts(self, r, bodyParts(self, c), 1, mixc(BLACK, ember, a * flick), 6)
+            end
         end
         -- the lock-on ring: how long you have held the light on it
         if full and not c.found and c.dwell > 0.04 and self.phase == 1 then
