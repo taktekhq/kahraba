@@ -1,6 +1,7 @@
 # كهربا · Kahraba
 
 **A Beirut power-cut ghost story, built with Rive.** Entry for the Contra × Rive Halloween Challenge 2026.
+Video, stills and notes: https://taktek.io/kahraba/
 
 ![Kahraba: the phone light finds the ghoul on the roof](media/hero.jpg)
 
