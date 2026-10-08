@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kahraba · a Beirut power-cut ghost story, made with Rive</title>
+<meta name="description" content="Kahraba (كهربا): the state power cuts, and you hunt six jinn through a Beirut building with your phone light. Built with the Rive CLI, RML, Luau scripting and a WGSL GPU canvas.">
+<meta property="og:title" content="Kahraba · a Beirut power-cut ghost story">
+<meta property="og:description" content="Hunt six jinn through a Beirut building with your phone light. Made with Rive: CLI, RML, Luau, WGSL.">
+<meta property="og:image" content="https://taktekhq.github.io/kahraba/media/hero.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+@font-face { font-family: "Lalezar"; src: url("fonts/Lalezar-Regular.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "IBM Plex Sans Arabic"; src: url("fonts/IBMPlexSansArabic-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "IBM Plex Sans Arabic"; src: url("fonts/IBMPlexSansArabic-SemiBold.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+:root {
+  --color-surface: #0a0c12;
+  --color-surface-2: #11141c;
+  --color-text: #f2e8d5;          /* on surface: 15.9:1 */
+  --color-text-muted: #b9b3a6;    /* on surface: 9.6:1 */
+  --color-border: #262a36;
+  --color-accent: #ffc861;        /* on surface: 12.6:1 */
+  --color-accent-ink: #1a1308;
+  --font-body: "IBM Plex Sans Arabic", "IBM Plex Sans", system-ui, sans-serif;
+  --font-display: "Lalezar", var(--font-body);
+  --text--1: clamp(0.83rem, 0.8rem + 0.12vw, 0.9rem);
+  --text-0: clamp(1rem, 0.95rem + 0.22vw, 1.125rem);
+  --text-1: clamp(1.2rem, 1.12rem + 0.36vw, 1.4rem);
+  --text-3: clamp(1.72rem, 1.55rem + 0.8vw, 2.2rem);
+  --text-5: clamp(2.5rem, 2rem + 2.4vw, 4.4rem);
+  --space-2xs: 8px; --space-s: 16px; --space-m: 24px; --space-l: 32px; --space-xl: 48px;
+  --space-3xl: clamp(64px, 50px + 4vw, 96px);
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
+  --measure: 65ch; --container: 1120px;
+  --dur-1: 120ms; --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* { box-sizing: border-box; }
+html { background: var(--color-surface); color: var(--color-text); }
+body { margin: 0; font: var(--text-0)/1.5 var(--font-body); }
+a { color: var(--color-accent); text-underline-offset: 3px; }
+a:focus-visible, .btn:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: var(--space-s); top: var(--space-s); background: var(--color-accent); color: var(--color-accent-ink); padding: var(--space-2xs) var(--space-s); }
+.wrap { max-width: var(--container); margin: 0 auto; padding: 0 var(--space-s); }
+header { padding: var(--space-xl) 0 var(--space-l); }
+.title { display: flex; align-items: baseline; gap: var(--space-m); flex-wrap: wrap; }
+.ar { font-family: var(--font-display); color: var(--color-accent); font-size: calc(var(--text-5) * 1.5); line-height: 1; font-weight: 400; margin: 0; }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: var(--text-5); line-height: 1.1; letter-spacing: -0.02em; margin: 0; }
+.lede { font-size: var(--text-1); color: var(--color-text-muted); max-width: var(--measure); margin: var(--space-s) 0 0; }
+video, .still img { display: block; width: 100%; height: auto; border-radius: var(--radius-lg); background: #000; }
+.actions { display: flex; gap: var(--space-s); flex-wrap: wrap; margin: var(--space-m) 0 0; align-items: center; }
+.btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-m); border-radius: var(--radius-md); font-weight: 600; text-decoration: none; transition: background-color var(--dur-1) var(--ease-out); }
+.btn-primary { background: var(--color-accent); color: var(--color-accent-ink); }
+.btn-secondary { border: 1px solid var(--color-border); color: var(--color-text); }
+@media (hover: hover) { .btn-primary:hover { background: #ffd789; } .btn-secondary:hover { background: var(--color-surface-2); } }
+section { padding: var(--space-3xl) 0 0; }
+h2 { font-size: var(--text-3); line-height: 1.2; margin: 0 0 var(--space-s); font-weight: 600; }
+p { max-width: var(--measure); }
+.stills { display: grid; gap: var(--space-m); grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.still figcaption { color: var(--color-text-muted); font-size: var(--text--1); margin-top: var(--space-2xs); }
+.jinn { display: grid; gap: var(--space-m); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); padding: 0; list-style: none; }
+.jinn li { background: var(--color-surface-2); border-radius: var(--radius-md); padding: var(--space-m); }
+.jinn b { display: block; font-family: var(--font-display); font-weight: 400; font-size: var(--text-3); color: var(--color-accent); line-height: 1.2; }
+.jinn span { display: block; font-size: var(--text--1); color: var(--color-text-muted); letter-spacing: 0.08em; margin-bottom: var(--space-2xs); }
+table { border-collapse: collapse; width: 100%; font-size: var(--text--1); }
+td, th { text-align: start; padding: var(--space-2xs) var(--space-s) var(--space-2xs) 0; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+th { color: var(--color-text); white-space: nowrap; }
+td { color: var(--color-text-muted); }
+code { font-size: 0.92em; background: var(--color-surface-2); padding: 2px 6px; border-radius: var(--radius-sm); }
+.note { border-inline-start: 3px solid var(--color-accent); padding-inline-start: var(--space-s); color: var(--color-text-muted); }
+footer { padding: var(--space-3xl) 0 var(--space-xl); color: var(--color-text-muted); font-size: var(--text--1); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap">
+  <div class="title">
+    <p class="ar" lang="ar" dir="rtl">كهربا</p>
+    <h1>Kahraba</h1>
+  </div>
+  <p class="lede">A Beirut power-cut ghost story. The state power cuts, and you hunt six jinn through an apartment building with your phone light. Made with Rive for the Rive Halloween Challenge.</p>
+</header>
+<main id="main" class="wrap">
+  <video controls preload="metadata" poster="media/hero.jpg" width="1600" height="1000">
+    <source src="media/kahraba.mp4" type="video/mp4">
+  </video>
+  <div class="actions">
+    <a class="btn btn-primary" href="https://github.com/taktekhq/kahraba">Get the source and play it</a>
+    <a class="btn btn-secondary" href="media/kahraba.mp4" download>Download the video</a>
+  </div>
+  <p class="note">Play it locally: install the Rive CLI, clone the repo, run <code>rive .</code> in it. The pointer is your phone light. A hosted, playable link follows once the file is published with <code>rive --publish=web</code>, which signs the scripts and needs a Rive login.</p>
+
+  <section aria-labelledby="story">
+    <h2 id="story">The story</h2>
+    <p>8 PM, and the state power (<span lang="ar">كهربا الدولة</span>) is on. For now. The lights stutter the way every Beiruti knows they will, then the building goes dark. Six jinn live here, and in the cut you can see their eyes in the windows. Rest your light on a pair of eyes and the jinn behind them shows itself, reacts, and flees. Find all six and Abu Ali's neighbourhood generator (<i>el moteur</i>, 5 amps) coughs into life, and the six of them sit on the parapet together. Even the jinn pay the subscription. Keep the light on too long and the battery dies, and the whole building opens its eyes.</p>
+    <ul class="jinn">
+      <li><span>THE GHOUL</span><b lang="ar">الغول</b>Crouches between the water tanks; lit, it rears up with its claws over its head.</li>
+      <li><span>THE SI'LEWA</span><b lang="ar">السعلوة</b>Combs her hair behind Umm Georges' laundry; lit, she ducks behind the sheets.</li>
+      <li><span>THE QARINA</span><b lang="ar">القرينة</b>Your shadow twin. She steps the other way, and lifts her own phone at you.</li>
+      <li><span>THE IFRIT</span><b lang="ar">العفريت</b>Born in generator smoke. Lit, it burns, then goes back down the chimney.</li>
+      <li><span>ABU KEES</span><b lang="ar">أبو كيس</b>In his tarboush, with a sack on his back. Something in the sack kicks.</li>
+      <li><span>THE NEIGHBOURS' CAT</span><b lang="ar">بسّة الجيران</b>Arches, puffs its tail, bolts along the wall. Probably just a cat.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="stills">
+    <h2 id="stills">Stills</h2>
+    <div class="stills">
+      <figure class="still"><img src="media/hero.jpg" width="1600" height="1000" loading="lazy" alt="In the power cut, the phone light finds the ghoul between the water tanks on the roof as it rears up"><figcaption>The light finds the Ghoul on the roof.</figcaption></figure>
+      <figure class="still"><img src="media/still-lit.jpg" width="1600" height="1000" loading="lazy" alt="The lit apartment building before the cut, neighbours in the windows, a Lebanese flag on the roof"><figcaption>8 PM, state power on.</figcaption></figure>
+      <figure class="still"><img src="media/still-qarina.jpg" width="1600" height="1000" loading="lazy" alt="In the dark, the phone light finds the Qarina in the triple arch, lifting her own phone"><figcaption>The Qarina lifts her own phone.</figcaption></figure>
+      <figure class="still"><img src="media/still-battery-dead.jpg" width="1600" height="1000" loading="lazy" alt="The battery died: red and yellow eyes open in every window"><figcaption>The battery died.</figcaption></figure>
+      <figure class="still"><img src="media/still-ending.jpg" width="1600" height="1000" loading="lazy" alt="The generator is on and six jinn sit on the parapet under the end card reading Happy Halloween from Beirut"><figcaption>Even the jinn pay the subscription.</figcaption></figure>
+    </div>
+  </section>
+
+  <section aria-labelledby="how">
+    <h2 id="how">How it is made</h2>
+    <p>Written in RML, Luau and WGSL with the Rive CLI, and rendered headless with it: every frame of the video is a <code>rive --screenshot</code>.</p>
+    <table>
+      <tr><th scope="row">Rive CLI + RML</th><td>The file is markup: text, HUD, cards, the inverter switch, the state machine and every keyed animation, verified with <code>rive . --verify</code>.</td></tr>
+      <tr><th scope="row">Scripting</th><td>A Luau layout script draws the street twice a frame (albedo and emission), runs the story clock, the torch, the six jinn and their reactions, sparks, smoke and the generator's rumble.</td></tr>
+      <tr><th scope="row">GPU Canvas</th><td>One WGSL pass lights it all: city glow or moonlight, window spill, the phone torch, a painted sky, bloom, fog, shake and grain.</td></tr>
+      <tr><th scope="row">Data binding</th><td>A view model carries power, phase, jinn found, battery, captions in English and Lebanese Arabic, and the street-light level that dims the neon signs.</td></tr>
+      <tr><th scope="row">State machine</th><td>Four layers: the lever, the story, one card per jinn found, and the battery warning.</td></tr>
+      <tr><th scope="row">Tuned by hand</th><td>Named ease curves for every keyed move, the lever's 240 ms overshoot and 3-frame plate knock, the card's elastic settle, the story's timing, the torch path, each jinn's pose and palette, all adjusted by eye against screenshots.</td></tr>
+    </table>
+  </section>
+</main>
+<footer class="wrap">
+  <p>Made by <a href="https://github.com/taktekhq">Taktek</a>, Beirut. Fonts: Lalezar (Borna Izadpanah) and IBM Plex Sans Arabic (IBM), SIL Open Font License. Code MIT. <a href="https://github.com/taktekhq/kahraba">Source</a>.</p>
+</footer>
+</body>
+</html>
