@@ -111,7 +111,7 @@ let r = max(u.reach, 1.0);
 let core = smoothstep(r, r * 0.15, d);
 let ring = smoothstep(r * 1.05, r * 0.9, d)
          * smoothstep(r * 0.7, r * 0.92, d) * 0.25;
-let torch = (core * core * 1.5 + core * 0.45 + ring)
+let torch = (core * core * 0.85 + core * 0.4 + ring)
           * u.torchOn;
 
 // moonlight in the cut, sodium glow while
@@ -298,6 +298,7 @@ def main():
     ap.add_argument('--main', required=True)
     ap.add_argument('--dead', required=True)
     ap.add_argument('--out', required=True)
+    ap.add_argument('--audio')
     a = ap.parse_args()
 
     def frame(dirn, i):
@@ -307,8 +308,9 @@ def main():
     n_dead = len([f for f in os.listdir(a.dead) if f.endswith('.png') and '.tmp' not in f])
 
     ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24',
-                           '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
-                           '-c:v', 'libx264', '-preset', 'slow', '-crf', '21', '-pix_fmt', 'yuv420p',
+                           '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-']
+                          + (['-i', a.audio, '-c:a', 'aac', '-b:a', '160k', '-shortest'] if a.audio else [])
+                          + ['-c:v', 'libx264', '-preset', 'slow', '-crf', '23', '-maxrate', '4800k', '-bufsize', '9600k', '-pix_fmt', 'yuv420p',
                            '-movflags', '+faststart', a.out], stdin=subprocess.PIPE)
 
     def emit(im):
@@ -334,7 +336,7 @@ def main():
         al = ease(t / 0.4) * (1 - ease((t - 1.4) / 0.4))
         emit(card([
             ('How it is made', F(PLEX_SB, 44), CREAM, 440),
-            ('Written in RML, Luau and WGSL with the Rive CLI. No editor yet.', F(PLEX, 26), MUTED, 510),
+            ('Written as RML, Luau and WGSL, built and rendered with the Rive CLI.', F(PLEX, 26), MUTED, 510),
         ], alpha=al))
     previews = {
         'rml': frame(a.main, 336).crop((0, 100, 1000, 720)),

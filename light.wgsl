@@ -149,8 +149,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let r = max(u.reach, 1.0);
     let core = smoothstep(r, r * 0.15, d);
     let ring = smoothstep(r * 1.05, r * 0.9, d) * smoothstep(r * 0.7, r * 0.92, d) * 0.25;
-    let torch = (core * core * 1.5 + core * 0.45 + ring) * u.torchOn;
-    let torchCol = vec3<f32>(1.0, 0.95, 0.86);
+    let torch = (core * core * 0.85 + core * 0.4 + ring) * u.torchOn;
+    let torchCol = vec3<f32>(1.0, 0.93, 0.80); // a phone LED, a little warm
 
     var col = alb * (ambient + spill + torch * torchCol);
     col = col + skyCol * sky;

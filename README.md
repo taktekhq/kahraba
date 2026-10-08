@@ -40,10 +40,11 @@ Video: [media/kahraba.mp4](media/kahraba.mp4)
 | **Data binding** | a `Street` view model: `power`, `phase`, `found`, battery, captions (EN/AR), card text, street-light level. Text runs, the battery bar width, and the neon signs' opacity are bound through range-mapper converters |
 | **State machine** | four layers: *Lever* (the switch, with an overshooting throw and the plate knocking the wall), *Story* (intro / hunt / rescued / ending), *Cards* (one state per jinn found), *Battery* (calm, or red and breathing below 20%) |
 
-Hand-tuned in the markup: named ease curves (`SNAP_OUT`, `SLOW_IN`, `SETTLE`, `THROW` in `tools/gen_scene.py`),
+Hand-tuned in the markup (tuned by eye, frame by frame against screenshots; an Editor pass on top follows): named ease curves (`SNAP_OUT`, `SLOW_IN`, `SETTLE`, `THROW` in `tools/gen_scene.py`),
 the lever's 240 ms overshoot, the 3-frame plate knock, the card's elastic slide and 2.5 s hold, the end card
 waiting 190 frames for the parade. In the script: the story timing (`CUT_AFTER`, `WARN_AT`, `DWELL`), the
-hand-placed torch path the demo follows, and each jinn's pose.
+hand-placed torch path the demo follows, each jinn's pose and its own hand-picked palette
+(ash, bone, shadow, ember, sackcloth, black cat), and the warm rim that lights the six on the parapet.
 
 ## Build and run
 
@@ -66,16 +67,26 @@ rive login
 rive . --publish=web --name=kahraba
 ```
 
-### The video
+### The video and stills (one command)
 
-The CLI captures one frame per run, and the scene is deterministic, so the video is an image sequence of
-fresh runs, each advanced to its own time, cut together with ffmpeg:
+The CLI captures one frame per run, and the scene is deterministic (fixed 60 fps steps, hashed randomness),
+so the video is an image sequence of fresh headless runs, each advanced to its own time, cut together with
+ffmpeg over a soundtrack synthesised in numpy (nothing sampled). The stills are frames of the same sequences.
 
 ```bash
-python3 tools/render_frames.py --out /tmp/frames/main --start 0 --end 40.5 --data autoplay=1 --data quality=1.25
-python3 tools/render_frames.py --out /tmp/frames/dead --start 72.5 --end 78.5 --data quality=1.25
-python3 tools/make_video.py --main /tmp/frames/main --dead /tmp/frames/dead --out media/kahraba.mp4
+FRESH=1 tools/build_media.sh     # after any change to the scene: re-render every frame
+tools/build_media.sh             # resume / re-cut only (cached frames in /tmp/kframes are reused)
 ```
+
+That runs `rive . --verify`, then `tools/render_frames.py` (7 parallel workers, each in its own copy of the
+project; resumable), `tools/make_sound.py`, `tools/make_video.py` and `tools/make_stills.py`, and writes
+`media/kahraba.mp4` plus the five JPEGs (`tools/make_hero.sh` renders the cover separately, zoomed in on the roof). Needs Python 3 with Pillow + pygments, a Python with numpy for the
+sound (`PY_SND`, default `~/venvs/pw/bin/python`), and ffmpeg. About an hour of frames plus 20 min of cutting on a loaded 12-core laptop.
+Headless Linux tip: if `rive --screenshot` says `eglInitialize failed (no display server)`, run it with
+`EGL_PLATFORM=surfaceless` (the render script does this already).
+
+Timeline of the film (seconds): 0 title, 3.2 how it's made (RML, Luau, WGSL, the CLI loop), 22.6 the piece
+(cut at 29.6, six catches, the moteur ending), 63.1 the battery-dies ending, 69.1 credits, 73.7 end.
 
 ## Credits
 

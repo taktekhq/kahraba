@@ -764,14 +764,14 @@ end
 
 -- where each jinn is this frame: in hiding, fleeing once caught, or sitting on
 -- the parapet at the end
-local PARADE: { [string]: number } = { ghoul = 372, silewa = 482, qarina = 566, ifrit = 664, abukees = 760, cat = 846 }
+local PARADE: { [string]: number } = { ghoul = 402, silewa = 494, qarina = 574, ifrit = 664, abukees = 756, cat = 842 }
 local FEET: { [string]: number } = { ghoul = 38, silewa = 52, qarina = 66, ifrit = 56, abukees = 48, cat = 10 }
 
 local function pose(self: Scene, c: Creature, idx: number)
     if self.phase == 3 then
         local enter = self.endT - 1.8 - idx * 0.28
         local px: number = PARADE[c.kind] or 640
-        local sc = 0.85
+        local sc = 1
         local feet: number = FEET[c.kind] or 40
         local drop = 1 - smooth(0, 0.45, enter)
         local bounce = math.abs(math.sin(clamp01(enter / 0.45) * math.pi)) * 6
@@ -1055,7 +1055,17 @@ end
 
 type Part = { path: Path, tone: { number }?, width: number }
 
+-- each jinn has its own matter, hand-picked to stay dark until the torch
+-- finds it and then read as a different creature: ash, bone, shadow, ember,
+-- sackcloth, cat
+local TONE: { [string]: { number } } = {
+    ghoul = { 62, 78, 56 }, silewa = { 132, 120, 112 }, qarina = { 44, 48, 64 },
+    ifrit = { 104, 46, 34 }, abukees = { 70, 56, 44 }, cat = { 30, 28, 34 },
+}
+local HAIR = { 18, 16, 22 }
+
 local function bodyParts(self: Scene, c: Creature): { Part }
+    local base = TONE[c.kind]
     local t = self.t
     local h = c.heat
     local sc = c.sc
@@ -1068,7 +1078,7 @@ local function bodyParts(self: Scene, c: Creature): { Part }
     end
     local function part(tone: { number }?, width: number): Path
         local p = Path.new()
-        table.insert(parts, { path = p, tone = tone, width = width * sc })
+        table.insert(parts, { path = p, tone = tone or base, width = width * sc })
         return p
     end
     local function ell(p: Path, dx: number, dy: number, rx: number, ry: number)
@@ -1126,7 +1136,7 @@ local function bodyParts(self: Scene, c: Creature): { Part }
         local body = part(nil, 0)
         poly(body, { -12, 2 + duck, 12, 2 + duck, 20, 52, -20, 52 })
         ell(body, hx, -14 + duck, 11, 13)
-        local hair = part(nil, 2.6)
+        local hair = part(HAIR, 2.6)
         local amp = 3 + 12 * h
         local spd = 1.2 + 6 * h
         for i = 0, 10 do
@@ -1623,6 +1633,11 @@ local function drawStreetEmit(self: Scene, r: Renderer, feather: number)
             if full and c.heat > 0.03 then
                 drawParts(self, r, bodyParts(self, c), 1, mixc(BLACK, c.eyes, 0.35 * c.heat * vis), 1.4)
             end
+            if full and self.phase == 3 then
+                -- on the parapet the moteur's windows light them from below:
+                -- a warm rim, so the six read against the night sky
+                drawParts(self, r, bodyParts(self, c), 1, mixc(BLACK, rgb(255, 186, 112), 0.62 * vis), 1.8)
+            end
             drawEyes(self, r, c, open * vis, full)
             drawJinnLights(self, r, c, vis)
         end
@@ -1665,7 +1680,7 @@ local function drawStreetEmit(self: Scene, r: Renderer, feather: number)
             local ey = 120 + hash(i * 5.3) * (H - 200)
             local cycle = (t * 0.7 + hash(i)) % 3
             local open = if cycle < 0.12 then 0.2 else 1
-            eyePair(self, r, ex, ey, 4 + hash(i) * 4, 2 + hash(i * 9) * 2.5, if hash(i * 11) > 0.5 then rgb(255, 60, 40) else rgb(255, 220, 120), open)
+            eyePair(self, r, ex, ey, 4.5 + hash(i) * 5, 2.6 + hash(i * 9) * 3.2, if hash(i * 11) > 0.5 then rgb(255, 60, 40) else rgb(255, 220, 120), open)
         end
     end
 end

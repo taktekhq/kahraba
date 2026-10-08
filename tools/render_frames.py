@@ -66,7 +66,9 @@ def main():
             cmd = [rive, '.', f'--screenshot={tmp}', f'--viewport={a.viewport}', '--fit=contain', '--quiet']
             cmd += [f'--data={d}' for d in a.data]
             cmd += [f'--advance={adv}']
-            r = subprocess.run(cmd, cwd=wd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            # surfaceless EGL: picks the iGPU even when another DRM device is wedged
+            env = dict(os.environ, EGL_PLATFORM=os.environ.get('EGL_PLATFORM', 'surfaceless'))
+            r = subprocess.run(cmd, cwd=wd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             if r.returncode == 0 and os.path.exists(tmp):
                 os.replace(tmp, path)
             else:
