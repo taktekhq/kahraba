@@ -24,7 +24,10 @@ local CAM_Y = 22
 local CUT_AFTER = 7.0 -- how long the state power lasts (it never lasts)
 local WARN_AT = 5.6 -- the lights stutter before a cut
 local DWELL = 0.9 -- how long the torch must rest on a jinn
-local DRAIN = 1.5 -- battery percent per second while the torch is on
+local DRAIN = 3 -- battery percent per second while the torch is on: about 33 s of light
+local REACT = 0.85 -- a caught jinn's reaction before it flees: anticipation, stretch, shake
+local CLOSE = 1.6 -- seconds the camera holds its close-up on a catch
+local CLOSE_ZOOM = 2 -- how close
 local CHARGE = 12 -- percent per second on 5 amps
 
 type Shape = { path: Path, color: Color }
@@ -51,6 +54,8 @@ type Creature = {
     heat: number, -- how much torch is on it, eased
     -- pose this frame
     px: number, py: number, sc: number, alpha: number,
+    react: number, -- seconds into its reaction once caught (-1 before)
+    sx: number, sy: number, -- squash and stretch this frame
 }
 
 type Cable = { ax: number, ay: number, bx: number, by: number, sag: number, w: number, seed: number }
@@ -112,7 +117,14 @@ type Scene = {
     vmAuto: Property<number>?,
     vmLights: Property<number>?,
     vmQuality: Property<number>?,
+    vmView: Property<number>?,
     auto: boolean,
+    -- the close-up on a catch
+    zoom: number, -- 0 wide .. 1 close
+    zoomT: number, -- seconds since the catch, -1 when there is none
+    zx: number, zy: number, -- what it looks at, design units
+    brown: number, -- the brownout before a cut, 0..1
+    haze: number, -- the moteur's heat haze and sodium flicker, 0..1
 }
 
 -- ---------------------------------------------------------------------------
@@ -485,7 +497,7 @@ local function addCreature(self: Scene, kind: string, x: number, y: number, r: n
     table.insert(self.creatures, {
         kind = kind, x = x, y = y, r = r, found = false, dwell = 0, gone = 0,
         blink = hash(x) * 4, eyes = eyes, heat = 0,
-        px = x, py = y, sc = 1, alpha = 1,
+        px = x, py = y, sc = 1, alpha = 1, react = -1, sx = 1, sy = 1,
     })
 end
 
@@ -559,6 +571,7 @@ local function bindVm(self: Scene, context: Context)
     self.vmAuto = vm:getNumber('autoplay')
     self.vmLights = vm:getNumber('lights')
     self.vmQuality = vm:getNumber('quality')
+    self.vmView = vm:getNumber('view')
 end
 
 function init(self: Scene, context: Context): boolean
@@ -609,7 +622,7 @@ local function rebuild(self: Scene)
         colorTargets = { { format = gpu.format } },
     })
     self.pipeline = pipeline
-    local ubo = GPUBuffer.new({ size = 80, usage = 'uniform' })
+    local ubo = GPUBuffer.new({ size = 96, usage = 'uniform' })
     self.ubo = ubo
     self.bind = GPUBindGroup.new({
         layout = pipeline:getBindGroupLayout(0),
@@ -637,7 +650,23 @@ local function cam(self: Scene): (number, number, number)
     local s = math.max(sx, sy)
     local ox = (self.size.x - W * s) / 2
     local oy = (self.size.y - H * s) / 2
-    return s * ZOOM, ox + s * 640 * (1 - ZOOM), oy + s * CAM_Y
+    local a = s * ZOOM
+    local bx = ox + s * 640 * (1 - ZOOM)
+    local by = oy + s * CAM_Y
+    if self.zoom <= 0.001 then
+        return a, bx, by
+    end
+    -- the close-up: a window of 1/Z of the stage, centred on the jinn where it
+    -- can be, never leaving the picture
+    local e = self.zoom * self.zoom * (3 - 2 * self.zoom)
+    local z = 1 + (CLOSE_ZOOM - 1) * e
+    local fx = a * self.zx + bx
+    local fy = a * (self.zy - 8) + by
+    local vw = self.size.x / z
+    local vh = self.size.y / z
+    local lx = math.max(0, math.min(self.size.x - vw, fx - vw / 2))
+    local ly = math.max(0, math.min(self.size.y - vh, fy - vh / 2))
+    return a * z, (bx - lx) * z, (by - ly) * z
 end
 
 function pointerMove(self: Scene, event: PointerEvent)
@@ -722,12 +751,8 @@ local function setCard(self: Scene, c: Creature)
     say(self, card[3], card[4])
 end
 
-local function catch(self: Scene, c: Creature)
-    c.found = true
-    c.gone = 0
-    self.found += 1
-    self.shock = if c.kind == 'cat' then 0.45 else 1
-    setCard(self, c)
+-- the puff a jinn leaves when it finally runs
+local function poof(self: Scene, c: Creature)
     for k = 1, 18 do
         local a = hash(k + c.x) * 6.283
         local v = 30 + hash(k * 3 + c.y) * 90
@@ -736,6 +761,19 @@ local function catch(self: Scene, c: Creature)
             life = 0, max = 0.8 + hash(k) * 0.8, r = 8 + hash(k + 5) * 14,
         })
     end
+end
+
+local function catch(self: Scene, c: Creature)
+    c.found = true
+    c.gone = 0
+    c.react = 0
+    c.dwell = 0
+    self.found += 1
+    self.shock = if c.kind == 'cat' then 0.3 else 0.6
+    self.zoomT = 0
+    self.zx = c.x
+    self.zy = c.y
+    setCard(self, c)
     local fv = self.vmFound
     if fv ~= nil then
         fv.value = tostring(self.found) .. ' / 6'
@@ -752,6 +790,7 @@ local function reset(self: Scene)
         c.dwell = 0
         c.gone = 0
         c.heat = 0
+        c.react = -1
     end
     self.found = 0
     self.battery = 100
@@ -785,7 +824,22 @@ local function pose(self: Scene, c: Creature, idx: number)
     c.py = c.y
     c.sc = 1
     c.alpha = 1
+    c.sx = 1
+    c.sy = 1
     if not c.found then
+        return
+    end
+    if c.react >= 0 and c.react < REACT then
+        -- caught: it gathers itself (squash), snaps up (stretch), shudders,
+        -- and only then runs. Timings hand-set against the close-up.
+        local r = c.react
+        local squash = smooth(0, 0.16, r) * (1 - smooth(0.16, 0.26, r))
+        local stretch = smooth(0.16, 0.3, r) * (1 - smooth(0.42, 0.75, r))
+        c.sx = 1 + 0.16 * squash - 0.12 * stretch
+        c.sy = 1 - 0.2 * squash + 0.26 * stretch
+        local shake = smooth(0.22, 0.3, r) * (1 - smooth(0.3, REACT, r))
+        c.px = c.x + math.sin(self.t * 95) * 3.2 * shake
+        c.py = c.y + 6 * squash - 5 * stretch
         return
     end
     local g = c.gone
@@ -949,14 +1003,45 @@ function advance(self: Scene, seconds: number): boolean
         end
     end
 
+    -- the close-up after a catch
+    if self.zoomT >= 0 then
+        self.zoomT += dt
+        if self.zoomT > CLOSE + 1 then
+            self.zoomT = -1
+        end
+    end
+    local zoomTarget = if self.zoomT >= 0 and self.zoomT < CLOSE then 1 else 0
+    local kz = if zoomTarget > self.zoom then 1 - math.exp(-dt * 11) else 1 - math.exp(-dt * 6)
+    self.zoom += (zoomTarget - self.zoom) * kz
+
+    -- the GPU's moments: the brownout before a cut, the moteur's haze
+    local brownTarget = 0
+    if self.phase == 0 and self.power == 1 and self.cutT > WARN_AT - 0.6 then
+        local v = smooth(WARN_AT - 0.6, CUT_AFTER, self.cutT)
+        brownTarget = v * (0.55 + 0.45 * hash(math.floor(self.cutT * 17)))
+    elseif self.power == 0 and self.cutT < 0.5 then
+        brownTarget = 1 - self.cutT * 2
+    end
+    self.brown += (brownTarget - self.brown) * (1 - math.exp(-dt * 25))
+    local hazeTarget = if self.power == 2 then (if self.cutT < 3.5 then 1 else 0.45) else 0
+    self.haze += (hazeTarget - self.haze) * (1 - math.exp(-dt * 3))
+
     -- jinn: the torch has to rest on one to see it properly
     local reach = 70 * (0.55 + 0.45 * self.battery / 100)
     for idx, c in self.creatures do
         c.blink += dt
         local near = 0
         if c.found then
-            c.gone += dt
-        elseif torchOn and self.phase == 1 then
+            if c.react >= 0 and c.react < REACT then
+                c.react += dt
+                near = 1
+                if c.react >= REACT then
+                    poof(self, c)
+                end
+            else
+                c.gone += dt
+            end
+        elseif torchOn and self.phase == 1 and self.zoomT < 0 then
             local dx = self.torch.x - c.x
             local dy = self.torch.y - c.y
             local d = math.sqrt(dx * dx + dy * dy)
@@ -975,7 +1060,7 @@ function advance(self: Scene, seconds: number): boolean
         c.heat += (near - c.heat) * (1 - math.exp(-dt * 6))
         pose(self, c, idx - 1)
     end
-    if self.found >= 6 and self.phase ~= 3 then
+    if self.found >= 6 and self.phase ~= 3 and (self.zoomT < 0 or self.zoomT > CLOSE) then
         setPhase(self, 3)
         self.endT = 0
         pushPower(self, 2)
@@ -1073,8 +1158,10 @@ local function bodyParts(self: Scene, c: Creature): { Part }
     local x = c.px + math.sin(t * 60) * trem
     local y = c.py
     local parts: { Part } = {}
+    local ssx = sc * c.sx
+    local ssy = sc * c.sy
     local function V(dx: number, dy: number): Vector
-        return Vector.xy(x + dx * sc, y + dy * sc)
+        return Vector.xy(x + dx * ssx, y + dy * ssy)
     end
     local function part(tone: { number }?, width: number): Path
         local p = Path.new()
@@ -1082,7 +1169,7 @@ local function bodyParts(self: Scene, c: Creature): { Part }
         return p
     end
     local function ell(p: Path, dx: number, dy: number, rx: number, ry: number)
-        ellipse(p, x + dx * sc, y + dy * sc, rx * sc, ry * sc)
+        ellipse(p, x + dx * ssx, y + dy * ssy, rx * ssx, ry * ssy)
     end
     local function poly(p: Path, pts: { number })
         p:moveTo(V(pts[1], pts[2]))
@@ -1624,7 +1711,8 @@ local function drawStreetEmit(self: Scene, r: Renderer, feather: number)
     local pr = present(self)
     self.paint.feather = feather * 0.25
     for _, c in self.creatures do
-        local shown = (not c.found) or self.phase == 3
+        local reacting = c.found and c.react >= 0 and c.react < REACT
+        local shown = (not c.found) or self.phase == 3 or reacting
         if shown and pr > 0.01 then
             local cycle = c.blink % 4.2
             local open = if cycle < 0.14 then math.abs(cycle - 0.07) / 0.07 else 1
@@ -1641,10 +1729,10 @@ local function drawStreetEmit(self: Scene, r: Renderer, feather: number)
             drawEyes(self, r, c, open * vis, full)
             drawJinnLights(self, r, c, vis)
         end
-        if c.found and self.phase ~= 3 and c.gone < 1.4 and c.alpha > 0.01 then
-            -- a caught jinn burns in its own colour as it flees
+        if c.found and not reacting and self.phase ~= 3 and c.gone < 1.4 and c.alpha > 0.01 then
+            -- a caught jinn burns at its edges in its own colour as it flees
             local a = c.alpha * (1 - c.gone / 1.4)
-            drawParts(self, r, bodyParts(self, c), a, mixc(BLACK, c.eyes, 0.55 * a))
+            drawParts(self, r, bodyParts(self, c), 1, mixc(BLACK, c.eyes, 0.7 * a), if full then 1.6 else 3)
         end
         -- the lock-on ring: how long you have held the light on it
         if full and not c.found and c.dwell > 0.04 and self.phase == 1 then
@@ -1671,6 +1759,28 @@ local function drawStreetEmit(self: Scene, r: Renderer, feather: number)
         self.stroke.color = mixc(BLACK, mixc(rgb(255, 120, 40), rgb(255, 250, 210), a), a)
         self.stroke.thickness = if full then 2 else 5
         r:drawPath(sk, self.stroke)
+    end
+    -- the neighbours, or something like them: eyes that move from window to
+    -- window in the dark and shut when the light comes near. Never jinn.
+    if self.phase == 1 and pr > 0.01 and self.dead < 0 and #self.windows > 0 then
+        for k = 1, 6 do
+            local span = 2.6 + hash(k * 3.3) * 1.8
+            local tt = t + k * 1.37
+            local slot = math.floor(tt / span)
+            local u = (tt / span) - slot
+            local w = self.windows[math.floor(hash(slot * 7.1 + k * 13.7) * #self.windows) + 1]
+            if w ~= nil and not w.arch then
+                local ex = w.x + w.w * (0.3 + 0.4 * hash(slot + k))
+                local ey = w.y + w.h * (0.35 + 0.3 * hash(slot * 2 + k))
+                local dx = self.torch.x - ex
+                local dy = self.torch.y - ey
+                local lit = math.sqrt(dx * dx + dy * dy) < 85
+                local fade = smooth(0, 0.12, u) * (1 - smooth(0.82, 1, u))
+                local cycle = (t * 0.9 + k) % 2.3
+                local open = (if cycle < 0.13 then 0.15 else 1) * fade * pr * (if lit then 0 else 1)
+                eyePair(self, r, ex + math.sin(t * 0.7 + k) * 2, ey, 3.6, 1.7, if k % 2 == 0 then rgb(230, 220, 170) else rgb(200, 230, 255), open)
+            end
+        end
     end
     -- the battery died: the whole building opens its eyes
     if self.dead >= 0 then
@@ -1749,8 +1859,13 @@ function draw(self: Scene, renderer: Renderer)
     buffer.writef32(d, 60, (by + 470 * a) * q) -- the horizon, in pixels
     buffer.writef32(d, 64, (1110 * a + bx) * q) -- the moon
     buffer.writef32(d, 68, (118 * a + by) * q)
-    buffer.writef32(d, 72, 0)
-    buffer.writef32(d, 76, 0)
+    buffer.writef32(d, 72, self.brown)
+    buffer.writef32(d, 76, self.haze)
+    buffer.writef32(d, 80, (203 * a + bx) * q) -- the moteur's chimney
+    buffer.writef32(d, 84, (500 * a + by) * q)
+    local vv = self.vmView
+    buffer.writef32(d, 88, if vv ~= nil then vv.value else 0)
+    buffer.writef32(d, 92, 0)
     ubo:write(d)
 
     local pass = gpu:beginRenderPass({ color = { { loadOp = 'clear', storeOp = 'store', clearColor = { 0, 0, 0, 1 } } } })
@@ -1780,7 +1895,7 @@ return function(context: Context): Layout<Scene>
         ubo = nil,
         bind = nil,
         sampler = GPUSampler.new({ min = 'linear', mag = 'linear' }),
-        data = buffer.create(80),
+        data = buffer.create(96),
         paint = Paint.with({ color = Color.rgb(255, 255, 255) }),
         stroke = Paint.with({ style = 'stroke', thickness = 2, color = Color.rgb(0, 0, 0), cap = 'round', join = 'round' }),
         static = {},
@@ -1817,7 +1932,14 @@ return function(context: Context): Layout<Scene>
         vmAuto = nil,
         vmLights = nil,
         vmQuality = nil,
+        vmView = nil,
         auto = false,
+        zoom = 0,
+        zoomT = -1,
+        zx = 640,
+        zy = 400,
+        brown = 0,
+        haze = 0,
         init = init,
         resize = resize,
         advance = advance,

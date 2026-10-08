@@ -439,6 +439,7 @@ A('''    <DataConverterRangeMapper minInput="0" maxInput="100" minOutput="0" max
         <ViewModelPropertyString name="cardEn" id="0:911"/>
         <ViewModelPropertyNumber name="lights" id="0:912"/>
         <ViewModelPropertyNumber name="quality" id="0:913"/>
+        <ViewModelPropertyNumber name="view" id="0:914"/>
         <ViewModelInstance exports="true" name="Default" id="0:920">
             <ViewModelInstanceNumber propertyValue="1" viewModelPropertyId="0:901"/>
             <ViewModelInstanceNumber propertyValue="100" viewModelPropertyId="0:902"/>
@@ -453,6 +454,7 @@ A('''    <DataConverterRangeMapper minInput="0" maxInput="100" minOutput="0" max
             <ViewModelInstanceString propertyValue="THE GHOUL" viewModelPropertyId="0:911"/>
             <ViewModelInstanceNumber propertyValue="1" viewModelPropertyId="0:912"/>
             <ViewModelInstanceNumber propertyValue="1" viewModelPropertyId="0:913"/>
+            <ViewModelInstanceNumber propertyValue="0" viewModelPropertyId="0:914"/>
         </ViewModelInstance>
     </ViewModel>
     <FontAsset file="Lalezar-Regular.ttf" name="Lalezar" id="0:31"/>

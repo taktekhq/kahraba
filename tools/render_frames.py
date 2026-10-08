@@ -39,7 +39,7 @@ def main():
 
     os.makedirs(a.out, exist_ok=True)
     rive = shutil.which('rive') or os.path.expanduser('~/.rive/bin/rive')
-    n = int(round((a.end - a.start) * a.fps))
+    n = max(1, int(round((a.end - a.start) * a.fps)))
     todo = queue.Queue()
     for i in range(n):
         path = os.path.join(a.out, f'f{i:05d}.png')

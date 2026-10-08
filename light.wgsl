@@ -24,8 +24,11 @@ struct U {
     rumble: f32,   // the moteur is running
     horizon: f32,  // horizon line, pixels from the top
     moon: vec2<f32>,
+    brown: f32,    // the brownout before a cut: the voltage sags
+    haze: f32,     // the moteur catching: heat haze over its chimney, sodium flicker
+    chimney: vec2<f32>,
+    view: f32,     // 0 the lit picture, 1 the albedo buffer, 2 the emission buffer
     pad0: f32,
-    pad1: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: U;
@@ -97,6 +100,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     uv.x = uv.x + sin(uv.y * 40.0 + t * 30.0) * 0.003 * sh;
     uv.y = uv.y + sin(t * 157.0) * 0.0006 * u.rumble;
 
+    // heat haze rising off the moteur's chimney: the air above it wobbles
+    let hp = uv * u.res - u.chimney;
+    let hz0 = clamp(-hp.y / (260.0 * s), 0.0, 1.0);
+    let hw = exp(-pow(hp.x / (34.0 * s * (1.0 + 1.6 * hz0)), 2.0)) * step(hp.y, 0.0) * (1.0 - hz0);
+    uv.x = uv.x + sin(hp.y * 0.09 / s + t * 11.0) * 0.0035 * hw * u.haze;
+    uv.y = uv.y + cos(hp.y * 0.05 / s + t * 7.0) * 0.002 * hw * u.haze;
+
     let px = uv * u.res;
 
     // chromatic split grows with the shock
@@ -108,6 +118,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let alb = vec3<f32>(albR, albG, albB);
     let em = textureSample(emitTex, samp, uv).rgb;
     let sky = 1.0 - albC.a; // premultiplied: whatever is drawn covers the sky
+
+    // the breakdown: the two pictures the script hands over, before any light
+    if (u.view > 0.5 && u.view < 1.5) {
+        let chk = select(0.10, 0.14, (floor(px.x / (16.0 * s)) + floor(px.y / (16.0 * s))) % 2.0 > 0.5);
+        return vec4<f32>(alb + vec3<f32>(chk) * sky, 1.0);
+    }
+    if (u.view > 1.5) {
+        return vec4<f32>(em, 1.0);
+    }
 
     let city = 1.0 - u.dark; // how much of Beirut has power
 
@@ -131,9 +150,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // --- what lights the street
     // while the city has power: warm sodium street light from below and the
     // windows; in the cut: blue moonlight and nothing else
-    let cityLit = vec3<f32>(0.70, 0.62, 0.56);
+    let cityLit = vec3<f32>(0.56, 0.52, 0.46); // tired sodium, never quite enough
     let moonDark = vec3<f32>(0.10, 0.12, 0.22);
     var ambient = mix(cityLit, moonDark, u.dark);
+    // the moteur catching: the street light comes back sodium-orange, stuttering
+    let sodFl = 0.82 + 0.18 * sin(t * 37.0) * sin(t * 13.0 + 1.0);
+    ambient = mix(ambient, ambient * vec3<f32>(1.15, 0.9, 0.62) * sodFl, u.haze * 0.8);
     ambient = ambient * (1.0 - 0.6 * u.dead);
     // the facade is a touch brighter near the ground, where the shops and the
     // street lamp are
@@ -166,9 +188,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let fogLight = vec3<f32>(0.08, 0.10, 0.18) + torchCol * torch * 0.35 + far * 0.4;
     col = mix(col, fogLight, fogA * 0.4);
 
-    // vignette, deeper in the dark
+    // the brownout: the voltage sags, everything dims to a dirty orange
+    let sag = u.brown * (0.85 + 0.15 * sin(t * 100.0 * 3.14159));
+    col = mix(col, col * vec3<f32>(0.85, 0.52, 0.26) * 0.6, sag);
+
+    // vignette, deeper in the dark; it closes in when the battery dies
     let v = length((uv - vec2<f32>(0.5)) * vec2<f32>(1.0, 0.8));
-    col = col * mix(1.0, smoothstep(0.95, 0.25, v), 0.18 + 0.5 * u.dark);
+    col = col * mix(1.0, smoothstep(0.95 - 0.4 * u.dead, 0.25 - 0.22 * u.dead, v), 0.3 + 0.4 * u.dark + 0.3 * u.dead);
 
     // shock flash
     col = col + vec3<f32>(0.25, 0.05, 0.08) * sh * 0.3;

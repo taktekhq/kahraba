@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Cuts the submission video from rendered frames.
+"""Cuts the submission film from rendered frames (timeline in tools/film.py).
 
-  1. title card
-  2. how it is made: the RML, the Luau and the WGSL typed out beside what each
-     one draws, then the CLI loop in a terminal
-  3. the interactive piece, frame-rendered headless by tools/render_frames.py,
-     with the pointer drawn where the scripted torch path puts it
-  4. the other ending (the battery dies)
-  5. credits
+  1. the piece, opening on the lit street (the cut lands at 4.5 s), with the
+     pointer drawn where the demo path puts it and hidden in the close-ups
+  2. the other ending: the battery dies
+  3. GPU Canvas taken apart: the script's albedo and emission buffers beside
+     the lit result (real renders, `--data=view=1|2`)
+  4. a real terminal session (tools/session/session.txt), replayed
+  5. credits on a clean ground
 
-    python3 tools/make_video.py --main /tmp/frames/main --dead /tmp/frames/dead \
+    python3 tools/make_video.py --frames /tmp/kframes --audio /tmp/kframes/kahraba.wav \
         --out media/kahraba.mp4
 """
 import argparse
@@ -17,18 +17,20 @@ import math
 import os
 import subprocess
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
-from pygments.lexers import get_lexer_by_name
-from pygments.token import Token
+from PIL import Image, ImageDraw, ImageFont
+
+import film
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-W, H, FPS = 1600, 1000, 30
+W, H, FPS = 1600, 1000, film.FPS
 BG = (10, 12, 18)
 PANEL = (17, 20, 28)
 GOLD = (255, 200, 97)
 CREAM = (242, 232, 213)
 MUTED = (185, 179, 166)
 DIM = (110, 106, 98)
+GREEN = (160, 220, 150)
+VIOLET = (190, 160, 255)
 
 MONO = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf'
 F = lambda name, size: ImageFont.truetype(os.path.join(ROOT, name), size)
@@ -36,185 +38,16 @@ LALEZAR = 'Lalezar-Regular.ttf'
 PLEX = 'IBMPlexSansArabic-Regular.ttf'
 PLEX_SB = 'IBMPlexSansArabic-SemiBold.ttf'
 
-SYNTAX = [
-    (Token.Comment, (120, 128, 112)),
-    (Token.Keyword, (255, 140, 110)),
-    (Token.Name.Tag, (255, 140, 110)),
-    (Token.Name.Attribute, (255, 200, 97)),
-    (Token.Literal.String, (160, 220, 150)),
-    (Token.Literal.Number, (190, 160, 255)),
-    (Token.Name.Builtin, (120, 200, 255)),
-    (Token.Name.Function, (120, 200, 255)),
-    (Token.Operator, (220, 200, 180)),
-]
-
-
-def colour(tt):
-    for base, c in SYNTAX:
-        if tt in base:
-            return c
-    return CREAM
-
-
-# ---- the code shown, verbatim excerpts from the project (lightly trimmed)
-RML = '''<!-- the Cards layer: one state per jinn found, -->
-<!-- driven by the view model number `found` -->
-<StateMachineLayer name="Cards" id="0:503">
-  <AnimationState animationId="0:620" reset="true" id="0:540">
-    <StateTransition stateToId="0:541">
-      <TransitionViewModelCondition opValue="equal">
-        <TransitionPropertyViewModelComparator>
-          <BindablePropertyNumber>
-            <DataBindContext sourcePathIds="0:900-0:909"
-                             propertyKey="636"/>
-          </BindablePropertyNumber>
-        </TransitionPropertyViewModelComparator>
-        <TransitionValueNumberComparator value="1"/>
-      </TransitionViewModelCondition>
-    </StateTransition>
-  </AnimationState>
-<!-- the card slides in and settles like a sticker -->
-<LinearAnimation fps="60" duration="200" name="Card 1">
-  <KeyedObject objectId="0:300"><KeyedProperty propertyKey="13">
-    <KeyFrameDouble value="4" frame="0" interpolationType="elastic">
-      <ElasticInterpolator amplitude="0.6" period="0.35"/>
-    </KeyFrameDouble>
-    <KeyFrameDouble value="34" frame="34"/>'''
-
-LUAU = '''-- each jinn answers the light in its own way
-if c.kind == 'ghoul' then
-    -- crouched on the parapet; lit, it rears up
-    -- and throws its claws over its head
-    local rise = -10 * h
-    local body = part(nil, 0)
-    poly(body, { -9, 16, -14, 0 + rise, -16, -10 + rise,
-                 -6, -17 + rise, 6, -17 + rise, 16, -10 + rise })
-    ell(body, 0, -28 + rise, 11, 13)
-    local arms = part(nil, 4.5)
-    local lhx = lerp(-23, -42, h) + sw
-    local lhy = lerp(31, -50, h) + rise
-    limb(arms, -15, -8 + rise, lex, ley, lhx, lhy)
-elseif c.kind == 'qarina' then
-    -- your twin steps the other way, and lit,
-    -- she lifts her own phone at you
-    local ox = (640 - self.torch.x) * 0.03
-    ...
--- the torch has to rest on one to catch it
-if d < c.r + reach * 0.35 then
-    c.dwell += dt
-    if c.dwell > DWELL then catch(self, c) end
-end'''
-
-WGSL = '''// the phone torch: a hot centre, a soft ring
-let d = length(px - u.torch);
-let r = max(u.reach, 1.0);
-let core = smoothstep(r, r * 0.15, d);
-let ring = smoothstep(r * 1.05, r * 0.9, d)
-         * smoothstep(r * 0.7, r * 0.92, d) * 0.25;
-let torch = (core * core * 0.85 + core * 0.4 + ring)
-          * u.torchOn;
-
-// moonlight in the cut, sodium glow while
-// the city still has power
-var ambient = mix(cityLit, moonDark, u.dark);
-let spill = near * (0.28 + 0.2 * u.dark)
-          + far * (0.18 + 0.5 * u.dark);
-var col = alb.rgb * (ambient + spill + torch * torchCol);
-col = col + skyCol * sky;          // sky where nothing is drawn
-col = col + em * (0.9 + 0.1 * u.lights);
-
-// fog rolling down the street, lit by the torch
-let fogN = fbm(fp + vec2(fbm(fp * 0.7 + t * 0.03) * 1.6, 0.0));'''
-
-TERM = '''$ python3 tools/gen_scene.py && rive kahraba --verify
-scene.rml written
-rive  verified (0 errors, 0 warnings)
-
-$ rive kahraba --screenshot=shots/hunt.png \\
-      --data=autoplay=1 --advance=1110
-rive  showing Kahraba [1/1]
-rive  wrote shots/hunt.png
-
-$ rive kahraba --data-dump=- --data-dump-every=6 \\
-      --data-dump-filter=found,phase --data=autoplay=1
-{"time": 7.0,  "values": [{"path": "phase", "value": 1}]}
-{"time": 10.9, "values": [{"path": "found", "value": 1}]}
-{"time": 14.4, "values": [{"path": "found", "value": 2}]}
-...
-{"time": 29.3, "values": [{"path": "phase", "value": 3}]}'''
-
 
 def ease(x):
     x = max(0.0, min(1.0, x))
     return x * x * (3 - 2 * x)
 
 
-def tokens(code, lang):
-    lexer = get_lexer_by_name(lang)
-    out = []
-    for tt, val in lexer.get_tokens(code):
-        out.append((val, colour(tt)))
-    return out
-
-
-def code_frame(code_toks, nchars, title, subtitle, preview, label, step, font):
-    im = Image.new('RGB', (W, H), BG)
-    d = ImageDraw.Draw(im)
-    # heading
-    d.text((64, 46), title, font=F(PLEX_SB, 34), fill=CREAM)
-    d.text((64, 92), subtitle, font=F(PLEX, 22), fill=MUTED)
-    d.text((W - 64, 52), step, font=F(PLEX_SB, 18), fill=GOLD, anchor='ra')
-    # code panel
-    px, py, pw, ph = 48, 150, 960, 800
-    d.rounded_rectangle((px, py, px + pw, py + ph), 18, fill=PANEL)
-    for k, c in enumerate([(255, 95, 86), (255, 189, 46), (39, 201, 63)]):
-        d.ellipse((px + 22 + k * 22, py + 20, px + 34 + k * 22, py + 32), fill=c)
-    x0, y0 = px + 28, py + 58
-    lh = 30
-    x, y = x0, y0
-    left = nchars
-    line = 1
-    d.text((x0 - 4, y), '', font=font)
-    for val, col in code_toks:
-        for ch in val:
-            if left <= 0:
-                break
-            if ch == '\n':
-                x = x0
-                y += lh
-                line += 1
-            else:
-                d.text((x, y), ch, font=font, fill=col)
-                x += font.getlength(ch)
-            left -= 1
-        if left <= 0:
-            break
-    # caret
-    if (step and int(nchars / 6) % 2 == 0) or nchars < sum(len(v) for v, _ in code_toks):
-        d.rectangle((x + 1, y + 3, x + 11, y + 24), fill=GOLD)
-    # preview
-    if preview is not None:
-        pv = preview.copy()
-        pv.thumbnail((540, 680))
-        qx = 1040 + (520 - pv.width) // 2
-        qy = 150
-        im.paste(pv, (qx, qy))
-        d.rounded_rectangle((qx - 1, qy - 1, qx + pv.width, qy + pv.height), 10, outline=(60, 62, 72), width=2)
-        ty = qy + pv.height + 22
-        for ln in label.split('\n'):
-            d.text((1040, ty), ln, font=F(PLEX, 20), fill=MUTED)
-            ty += 30
-    return im
-
-
-def card(lines, bg=None, alpha=1.0):
-    im = Image.new('RGB', (W, H), BG) if bg is None else bg.copy()
-    d = ImageDraw.Draw(im)
-    for (txt, font, col, y) in lines:
-        d.text((W // 2, y), txt, font=font, fill=col, anchor='mm')
-    if alpha < 1:
-        im = Image.blend(Image.new('RGB', (W, H), (0, 0, 0)), im, alpha)
-    return im
+def fade_black(im, a):
+    if a >= 1:
+        return im
+    return Image.blend(Image.new('RGB', (W, H), (0, 0, 0)), im, max(0.0, a))
 
 
 # ---- the pointer: the same path and smoothing as main.luau's autopilot
@@ -262,14 +95,22 @@ def to_px(x, y):
     return sx * W / 1280, sy * H / 800
 
 
+def pointer_alpha(t):
+    """Shown from the cut until the hunt ends, hidden while a close-up holds
+    (the camera moves there, the drawn pointer would not)."""
+    a = ease((t - (film.CUT + 0.2)) / 0.3) * (1 - ease((t - 30.0) / 0.4))
+    for c in film.CATCHES:
+        a *= 1 - ease((t - (c - 0.15)) / 0.15) * (1 - ease((t - (c + film.CLOSE + 0.35)) / 0.25))
+    return a
+
+
 def draw_pointer(im, x, y, a):
     if a <= 0.01:
         return im
     layer = Image.new('RGBA', im.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     pts = [(0, 0), (0, 26), (7, 20), (12, 31), (17, 29), (12, 18), (21, 18)]
-    s = 1.0
-    poly = [(x + px * s, y + py * s) for px, py in pts]
+    poly = [(x + px, y + py) for px, py in pts]
     d.polygon([(px + 2, py + 2) for px, py in poly], fill=(0, 0, 0, int(110 * a)))
     d.polygon(poly, fill=(255, 255, 255, int(255 * a)), outline=(20, 20, 24, int(255 * a)))
     base = im.convert('RGBA')
@@ -277,14 +118,13 @@ def draw_pointer(im, x, y, a):
     return base.convert('RGB')
 
 
-def chip(im, text, a, y=56):
+def chip(im, text, a, y=56, cx=712):
     if a <= 0.01:
         return im
     layer = Image.new('RGBA', im.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     f = F(PLEX_SB, 19)
     w = f.getlength(text) + 44
-    cx = 712
     d.rounded_rectangle((cx - w / 2, y - 22, cx + w / 2, y + 22), 22, fill=(10, 12, 18, int(225 * a)),
                         outline=(255, 200, 97, int(120 * a)), width=1)
     d.text((cx, y), text, font=f, fill=(255, 200, 97, int(255 * a)), anchor='mm')
@@ -293,115 +133,188 @@ def chip(im, text, a, y=56):
     return base.convert('RGB')
 
 
+def heading(d, title, sub, step=None):
+    d.text((64, 46), title, font=F(PLEX_SB, 34), fill=CREAM)
+    d.text((64, 92), sub, font=F(PLEX, 22), fill=MUTED)
+    if step:
+        d.text((W - 64, 52), step, font=F(PLEX_SB, 18), fill=GOLD, anchor='ra')
+
+
+# ---- 3. GPU Canvas taken apart
+def breakdown_frame(t, alb, emi, lit):
+    im = Image.new('RGB', (W, H), BG)
+    d = ImageDraw.Draw(im)
+    heading(d, 'GPU Canvas, taken apart',
+            'main.luau draws the street twice a frame; one WGSL pass lights it')
+    pw, ph = 480, 300
+    xs = [56, 560, 1064]
+    y0 = 300
+    items = [(alb, 'albedo', 'what things are made of (sky left empty)'),
+             (emi, 'emission', 'what glows: windows, eyes, moon, candle'),
+             (lit, 'light.wgsl', 'moonlight, window spill, the torch, fog')]
+    for k, (src, name, note) in enumerate(items):
+        a = ease((t - 0.1 - k * 0.45) / 0.35)
+        if a <= 0:
+            continue
+        # the street only: the RML HUD is not part of the script's buffers
+        th = src.crop((300, 150, 1300, 775)).resize((pw, ph), Image.LANCZOS)
+        yy = int(y0 + (1 - a) * 30)
+        tile = Image.blend(Image.new('RGB', (pw, ph), BG), th, a)
+        im.paste(tile, (xs[k], yy))
+        d.rounded_rectangle((xs[k] - 1, yy - 1, xs[k] + pw, yy + ph), 8,
+                            outline=GOLD if k == 2 else (60, 62, 72), width=2)
+        col = tuple(int(BG[i] + (c - BG[i]) * a) for i, c in enumerate(GOLD))
+        mut = tuple(int(BG[i] + (c - BG[i]) * a) for i, c in enumerate(MUTED))
+        d.text((xs[k], yy + ph + 22), f'{k + 1} · {name}', font=F(PLEX_SB, 24), fill=col)
+        d.text((xs[k], yy + ph + 58), note, font=F(PLEX, 19), fill=mut)
+        if k > 0:
+            d.text((xs[k] - 12, y0 + ph // 2), '+' if k == 1 else '→', font=F(PLEX_SB, 34),
+                   fill=col, anchor='rm')
+    return fade_black(im, ease(t / 0.25) * (1 - ease((t - film.BREAK_DUR + 0.25) / 0.25)))
+
+
+# ---- 4. the terminal, replayed from a real capture
+def line_colour(s):
+    if s.startswith('+') and not s.startswith('+++'):
+        return GREEN
+    if s.startswith('@@'):
+        return VIOLET
+    if s.startswith('diff') or s.startswith('index') or s.startswith('---') or s.startswith('+++'):
+        return DIM
+    return MUTED
+
+
+def terminal_frame(t, sched, shot, mono):
+    im = Image.new('RGB', (W, H), BG)
+    d = ImageDraw.Draw(im)
+    heading(d, 'The loop, for real', 'a captured session in this repo: the diff, rive --verify, a screenshot run')
+    px, py, pw, ph = 48, 150, 1504, 800
+    d.rounded_rectangle((px, py, px + pw, py + ph), 18, fill=PANEL)
+    for k, c in enumerate([(255, 95, 86), (255, 189, 46), (39, 201, 63)]):
+        d.ellipse((px + 22 + k * 22, py + 20, px + 34 + k * 22, py + 32), fill=c)
+    d.text((px + pw // 2, py + 26), 'kahraba: bash', font=F(PLEX, 16), fill=DIM, anchor='mm')
+    lines = []
+    caret = None
+    for (et, kind, text) in sched:
+        if et > t:
+            break
+        if kind == 'cmd':
+            n = int((t - et) * film.TYPE_CPS)
+            lines.append(('cmd', text[:max(2, n)]))
+            if n < len(text):
+                caret = len(lines) - 1
+        else:
+            lines.append(('out', text))
+    lh = 29
+    maxl = (ph - 70) // lh
+    shown = lines[-maxl:]
+    x0, y = px + 28, py + 56
+    for i, (kind, text) in enumerate(shown):
+        if kind == 'cmd':
+            d.text((x0, y), '$', font=mono, fill=GOLD)
+            d.text((x0 + mono.getlength('$ '), y), text[2:], font=mono, fill=CREAM)
+        else:
+            if text.startswith('[') and 'rive' in text:
+                stamp, _, rest = text.partition(' ')
+                d.text((x0, y), stamp, font=mono, fill=DIM)
+                d.text((x0 + mono.getlength(stamp + ' '), y), rest, font=mono,
+                       fill=GREEN if ('0 errors' in rest or 'wrote' in rest) else MUTED)
+            else:
+                d.text((x0, y), text, font=mono, fill=line_colour(text))
+        if caret is not None and i == len(shown) - 1 - (len(lines) - 1 - caret) and kind == 'cmd':
+            cx = x0 + mono.getlength(text)
+            d.rectangle((cx + 2, y + 3, cx + 12, y + 24), fill=GOLD)
+        y += lh
+    # the screenshot it wrote
+    wrote = [et for (et, kind, text) in sched if kind == 'out' and 'wrote build/' in text]
+    if wrote and t > wrote[0]:
+        a = ease((t - wrote[0]) / 0.35)
+        tw, tht = 432, 270
+        th = shot.resize((tw, tht), Image.LANCZOS)
+        tx, ty = px + pw - tw - 36, py + 86
+        im.paste(Image.blend(Image.new('RGB', th.size, PANEL), th, a), (tx, ty))
+        d.rectangle((tx - 1, ty - 1, tx + tw, ty + tht), outline=GOLD, width=2)
+        d.text((tx, ty - 30), 'build/albedo.png', font=mono, fill=GOLD)
+    return fade_black(im, ease(t / 0.25) * (1 - ease((t - film.TERM_DUR + 0.25) / 0.25)))
+
+
+def credits_frame(t):
+    im = Image.new('RGB', (W, H), BG)
+    d = ImageDraw.Draw(im)
+    rows = [
+        ('كهربا', F(LALEZAR, 130), GOLD, 300),
+        ('KAHRABA · a Beirut power-cut ghost story', F(PLEX_SB, 30), CREAM, 430),
+        ('Rive CLI · RML · Luau scripting · WGSL GPU canvas · data binding · state machines', F(PLEX, 24), MUTED, 500),
+        ('github.com/taktekhq/kahraba    ·    taktek.io/kahraba', F(PLEX, 24), MUTED, 600),
+        ('@rive_app  #rivehalloweenchallenge', F(PLEX, 24), GOLD, 650),
+        ('Taktek · Beirut', F(PLEX, 20), DIM, 900),
+    ]
+    for txt, font, col, y in rows:
+        d.text((W // 2, y), txt, font=font, fill=col, anchor='mm')
+    return fade_black(im, ease(t / 0.35) * (1 - ease((t - film.CRED_DUR + 0.4) / 0.4)))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--main', required=True)
-    ap.add_argument('--dead', required=True)
+    ap.add_argument('--frames', required=True)
     ap.add_argument('--out', required=True)
     ap.add_argument('--audio')
     a = ap.parse_args()
 
-    def frame(dirn, i):
-        return Image.open(os.path.join(dirn, f'f{i:05d}.png')).convert('RGB')
+    def seq(name):
+        dn = os.path.join(a.frames, name)
+        return dn, len([f for f in os.listdir(dn) if f.endswith('.png') and '.tmp' not in f])
 
-    n_main = len([f for f in os.listdir(a.main) if f.endswith('.png') and '.tmp' not in f])
-    n_dead = len([f for f in os.listdir(a.dead) if f.endswith('.png') and '.tmp' not in f])
+    def frame(dn, i):
+        return Image.open(os.path.join(dn, f'f{i:05d}.png')).convert('RGB')
+
+    main_dir, n_main = seq('main')
+    dead_dir, n_dead = seq('dead')
+    alb = frame(seq('albedo')[0], 0)
+    emi = frame(seq('emit')[0], 0)
+    lit = frame(main_dir, int(round((film.BREAK_FILM - film.PIECE_START) * FPS)))
+    shot = Image.open(os.path.join(ROOT, 'tools', 'session', 'albedo.png')).convert('RGB')
+    mono = ImageFont.truetype(MONO, 19)
+    sched = film.term_schedule()
 
     ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24',
                            '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-']
                           + (['-i', a.audio, '-c:a', 'aac', '-b:a', '160k', '-shortest'] if a.audio else [])
-                          + ['-c:v', 'libx264', '-preset', 'slow', '-crf', '23', '-maxrate', '4800k', '-bufsize', '9600k', '-pix_fmt', 'yuv420p',
-                           '-movflags', '+faststart', a.out], stdin=subprocess.PIPE)
+                          + ['-c:v', 'libx264', '-preset', 'slow', '-crf', '23', '-maxrate', '4800k',
+                             '-bufsize', '9600k', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', a.out],
+                          stdin=subprocess.PIPE)
 
     def emit(im):
         ff.stdin.write(im.tobytes())
 
-    # 1. title over the lit street
-    street = frame(a.main, 90).filter(ImageFilter.GaussianBlur(6))
-    street = Image.blend(Image.new('RGB', (W, H), BG), street, 0.42)
-    for i in range(int(3.2 * FPS)):
-        t = i / FPS
-        al = ease(t / 0.6) * (1 - ease((t - 2.8) / 0.4))
-        emit(card([
-            ('كهربا', F(LALEZAR, 210), GOLD, 360),
-            ('KAHRABA', F(LALEZAR, 70), CREAM, 520),
-            ('a Beirut power-cut ghost story', F(PLEX, 32), MUTED, 590),
-            ('Rive Halloween Challenge  ·  made with the Rive CLI', F(PLEX, 22), DIM, 880),
-        ], bg=street, alpha=al))
-
-    # 2. how it is made
-    mono = ImageFont.truetype(MONO, 19)
-    for i in range(int(1.8 * FPS)):
-        t = i / FPS
-        al = ease(t / 0.4) * (1 - ease((t - 1.4) / 0.4))
-        emit(card([
-            ('How it is made', F(PLEX_SB, 44), CREAM, 440),
-            ('Written as RML, Luau and WGSL, built and rendered with the Rive CLI.', F(PLEX, 26), MUTED, 510),
-        ], alpha=al))
-    previews = {
-        'rml': frame(a.main, 336).crop((0, 100, 1000, 720)),
-        'luau': frame(a.main, 318).crop((330, 40, 830, 440)),
-        'wgsl': frame(a.main, 555).crop((520, 380, 1080, 860)),
-        'term': frame(a.main, 330),
-    }
-    segs = [
-        (RML, 'xml', 'scene.rml', 'State machine + data binding: the story, the cards, the switch', 'rml',
-         'Cards layer: the script counts a catch,\nthe view model says found = 1,\nthe card slides in with an elastic key.', '1 / 4'),
-        (LUAU, 'lua', 'main.luau', 'Scripting: a Layout script draws the street and runs the story', 'luau',
-         'The ghoul, lit: it rears up, ears back,\narms over its head, mouth open.', '2 / 4'),
-        (WGSL, 'wgsl', 'light.wgsl', 'GPU Canvas: one WGSL pass lights the whole street', 'wgsl',
-         'Albedo + emission from the script,\nlit by your phone torch, moon and fog.', '3 / 4'),
-        (TERM, 'bash', 'terminal', 'The loop: verify, screenshot, dump the data, repeat', 'term',
-         'Every still and every video frame is\nrive --screenshot, rendered headless.', '4 / 4'),
-    ]
-    for code, lang, title, sub, pkey, label, step in segs:
-        toks = tokens(code, lang)
-        total = sum(len(v) for v, _ in toks)
-        dur = 4.4
-        for i in range(int(dur * FPS)):
-            t = i / FPS
-            n = int(total * ease(t / 3.0)) if t < 3.0 else total + int(t * 30)
-            emit(code_frame(toks, n, title, sub, previews[pkey], label, step, mono))
-
-    # 3. the piece
-    track = torch_track(45)
+    # 1. the piece
+    track = torch_track(film.PIECE_END + 1)
     for i in range(n_main):
-        t = i / FPS
-        im = frame(a.main, i)
+        t = film.PIECE_START + i / FPS
+        im = frame(main_dir, i)
         ti = min(len(track) - 1, max(0, int(round(t * 60)) - 1))
-        tx, ty = track[ti]
-        px, py = to_px(tx, ty)
-        pa = ease((t - 7.0) / 0.4) * (1 - ease((t - 29.6) / 0.6))
-        im = draw_pointer(im, px + 10, py + 10, pa)
-        im = chip(im, 'interactive  ·  your pointer is the phone light', ease((t - 7.4) / 0.4) * (1 - ease((t - 11.6) / 0.4)))
-        im = chip(im, 'the state power cuts by itself, it always does', ease((t - 5.0) / 0.3) * (1 - ease((t - 6.9) / 0.3)))
-        if t < 0.5:
-            im = Image.blend(Image.new('RGB', (W, H), (0, 0, 0)), im, ease(t / 0.5))
+        px, py = to_px(*track[ti])
+        im = draw_pointer(im, px + 10, py + 10, pointer_alpha(t))
+        im = chip(im, 'interactive  ·  your pointer is the phone light',
+                  ease((t - 7.6) / 0.3) * (1 - ease((t - 10.2) / 0.3)))
+        im = fade_black(im, ease((t - film.PIECE_START) / 0.3))
         emit(im)
 
-    # 4. the other ending
+    # 2. the other ending
     for i in range(n_dead):
         t = i / FPS
-        im = frame(a.dead, i)
-        im = chip(im, '…or keep the light on too long', ease(t / 0.3) * (1 - ease((t - 2.6) / 0.3)))
-        if t < 0.3:
-            im = Image.blend(Image.new('RGB', (W, H), (0, 0, 0)), im, ease(t / 0.3))
+        im = frame(dead_dir, i)
+        im = chip(im, '…or keep the light on until the battery dies', ease(t / 0.3) * (1 - ease((t - 2.4) / 0.3)))
+        im = fade_black(im, ease(t / 0.2) * (1 - ease((t - (n_dead / FPS - 0.25)) / 0.25)))
         emit(im)
 
-    # 5. credits
-    end = frame(a.main, n_main - 1).filter(ImageFilter.GaussianBlur(8))
-    end = Image.blend(Image.new('RGB', (W, H), BG), end, 0.35)
-    for i in range(int(4.6 * FPS)):
-        t = i / FPS
-        al = ease(t / 0.5) * (1 - ease((t - 4.1) / 0.5))
-        emit(card([
-            ('كهربا', F(LALEZAR, 120), GOLD, 300),
-            ('Rive CLI  ·  RML  ·  Luau scripting  ·  WGSL GPU canvas', F(PLEX_SB, 30), CREAM, 450),
-            ('data binding  ·  state machine  ·  Arabic + English type', F(PLEX_SB, 30), CREAM, 500),
-            ('github.com/taktekhq/kahraba', F(PLEX, 26), MUTED, 610),
-            ('@rive_app  #rivehalloweenchallenge', F(PLEX, 26), GOLD, 660),
-            ('Taktek · Beirut', F(PLEX, 20), DIM, 900),
-        ], bg=end, alpha=al))
+    # 3, 4, 5
+    for i in range(int(film.BREAK_DUR * FPS)):
+        emit(breakdown_frame(i / FPS, alb, emi, lit))
+    for i in range(int(film.TERM_DUR * FPS)):
+        emit(terminal_frame(i / FPS, sched, shot, mono))
+    for i in range(int(film.CRED_DUR * FPS)):
+        emit(credits_frame(i / FPS))
 
     ff.stdin.close()
     ff.wait()

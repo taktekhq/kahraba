@@ -13,18 +13,11 @@ import wave
 
 import numpy as np
 
+import film
+
 SR = 44100
 rng = np.random.default_rng(7)
-
-# the video's timeline (seconds), see make_video.py
-T_MAIN = 3.2 + 1.8 + 4 * 4.4          # the piece starts here
-T_DEAD = T_MAIN + 40.5
-T_CREDITS = T_DEAD + 6.0
-TOTAL = T_CREDITS + 4.6
-CUT = 7.0                              # film time of the cut
-CATCHES = [10.9, 14.4, 18.8, 22.3, 25.8, 29.3]
-DIES = 73.67 - 72.5                    # dead clip: the battery dies
-MOTEUR_DEAD = 76.27 - 72.5
+TOTAL = film.TOTAL
 
 
 def t_axis(n):
@@ -202,64 +195,88 @@ def hijaz(mix, at, gain=0.8):
         mix.add(at + tt, ks_pluck(d * s, 1.8), gain, pan=-0.2 + 0.4 * (s - 1))
 
 
+def whoosh(dur=0.6):
+    n = int(dur * SR)
+    t = t_axis(n)
+    x = lp_fast(noise(n), 1800) * np.sin(np.pi * t / dur) ** 2
+    return x * 0.5
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
     a = ap.parse_args()
     m = Mix(TOTAL)
+    P = film.piece_v
 
-    # title + how it is made: a low drone, keys while the code is typed
-    m.add(0, drone(T_MAIN + 0.5, 55, 0.6), 0.8)
-    for s in range(4):
-        st = 3.2 + 1.8 + s * 4.4
-        tt = st + 0.1
-        while tt < st + 3.0:
-            L = int(0.025 * SR)
-            click = lp_fast(noise(L), 3000) * np.exp(-np.arange(L) / 200)
-            m.add(tt, click, 0.25, pan=rng.uniform(-0.3, 0.3))
-            tt += rng.uniform(0.06, 0.16)
-
-    # the piece: 8 PM, the city with power
-    M = T_MAIN
-    m.add(M, hum(CUT), 1.0)
-    m.add(M, traffic(CUT + 0.2), 0.9)
-    m.add(M + 2.1, horn(0.3, 410), 1.0, pan=-0.6)
-    m.add(M + 2.5, horn(0.18, 410), 1.0, pan=-0.6)
-    m.add(M + 4.3, horn(0.5, 350), 0.6, pan=0.7)
-    m.add(M + 5.6, buzz(1.4), 0.6)
+    # the piece. 8 PM, the city with power, already uneasy
+    cut = P(film.CUT)
+    m.add(0, hum(cut), 1.0)
+    m.add(0, traffic(cut + 0.2), 0.9)
+    m.add(0, drone(cut + 0.5, 41.2, 0.5), 0.5)
+    m.add(0.6, horn(0.3, 410), 0.9, pan=-0.6)
+    m.add(1.0, horn(0.18, 410), 0.9, pan=-0.6)
+    # the brownout: the hum sags and buzzes before the cut
+    m.add(P(film.CUT - 1.9), buzz(1.9), 0.9)
+    n = int(1.9 * SR)
+    t = t_axis(n)
+    sag = np.sin(2 * np.pi * np.cumsum(50 - 14 * (t / 1.9) ** 2) / SR) * 0.25 * (t / 1.9)
+    m.add(P(film.CUT - 1.9), sag, 1.0)
     # the cut
-    m.add(M + CUT, thunk(), 0.6)
-    m.add(M + CUT, crackle(0.6, 160), 0.8, pan=-0.5)
-    # the dark
-    m.add(M + CUT, wind(22.5 + 1.0), 0.9)
-    m.add(M + CUT, drone(23.5, 41.2, 1.0), 0.9)
-    for k, c in enumerate(CATCHES):
-        m.add(M + c - 0.9, riser(0.9), 1.0)
+    m.add(cut, thunk(), 0.6)
+    m.add(cut, crackle(0.6, 160), 0.8, pan=-0.5)
+    hunt_end = P(film.MOTEUR)
+    m.add(cut, wind(hunt_end - cut + 1.0), 0.9)
+    m.add(cut, drone(hunt_end - cut + 1.0, 41.2, 1.0), 0.9)
+    for k, c in enumerate(film.CATCHES):
+        v = P(c)
+        m.add(v - 0.9, riser(0.9), 1.0)
+        # the reaction: a breath in (anticipation), the stinger on the stretch,
+        # a whoosh as it flees
+        m.add(v, lp_fast(noise(int(0.16 * SR)), 900) * np.linspace(0, 1, int(0.16 * SR)) * 0.25, 1.0)
         if k == 5:
-            m.add(M + c, meow(), 1.0, pan=-0.4)
+            m.add(v + 0.16, meow(), 1.2, pan=-0.4)
         else:
-            m.add(M + c, stinger(98 + k * 7), 1.7, pan=rng.uniform(-0.3, 0.3))
-    for s in [9.8, 16.9, 24.6]:
-        m.add(M + s, crackle(0.35, 100), 0.6, pan=-0.6)
-    # the moteur and the ending
-    m.add(M + CATCHES[-1], generator(40.5 - CATCHES[-1]), 1.0, pan=-0.35)
-    m.add(M + CATCHES[-1] + 0.6, crackle(0.4, 140), 0.6, pan=-0.5)
-    hijaz(m, M + 33.2, 1.5)
+            m.add(v + 0.16, stinger(98 + k * 7), 1.7, pan=rng.uniform(-0.3, 0.3))
+        m.add(v + film.REACT, whoosh(0.55), 0.8, pan=rng.uniform(-0.4, 0.4))
+    for sp in [9.8, 16.9, 24.6]:
+        m.add(P(sp), crackle(0.35, 100), 0.6, pan=-0.6)
+    # the moteur coughs in, the end card lands on a Hijaz phrase
+    piece_end = film.V_DEAD
+    m.add(hunt_end, generator(piece_end - hunt_end + 0.2), 1.0, pan=-0.35)
+    m.add(hunt_end + 0.6, crackle(0.4, 140), 0.6, pan=-0.5)
+    hijaz(m, P(film.END_CARD) + 0.4, 1.5)
 
     # the other ending
-    D = T_DEAD
-    m.add(D, wind(6.2), 0.8)
-    m.add(D, drone(6.2, 36.7, 1.0), 1.0)
+    D = film.V_DEAD
+    dur = film.DEAD_END - film.DEAD_START
+    m.add(D, wind(dur + 0.2), 0.8)
+    m.add(D, drone(dur + 0.2, 36.7, 1.0), 1.0)
+    dies = film.dead_v(film.DIES)
     n = int(1.4 * SR)
     t = t_axis(n)
     down = np.sin(2 * np.pi * np.cumsum(600 * np.exp(-t * 2.2) + 40) / SR) * np.exp(-t * 1.2) * 0.2
-    m.add(D + DIES, down, 1.0)
-    m.add(D + DIES + 0.2, stinger(73), 1.2)
-    m.add(D + MOTEUR_DEAD, generator(6.0 - MOTEUR_DEAD + 0.3, 0.5), 1.0, pan=-0.35)
+    m.add(dies, down, 1.0)
+    m.add(dies + 0.2, stinger(73), 1.3)
+    mv = film.dead_v(film.MOTEUR_DEAD)
+    m.add(mv, generator(film.V_BREAK - mv + 0.2, 0.5), 1.0, pan=-0.35)
+
+    # the breakdown and the terminal: a low bed, keys where commands are typed
+    m.add(film.V_BREAK, drone(film.BREAK_DUR + film.TERM_DUR, 55, 0.4), 0.6)
+    for k in range(3):
+        m.add(film.V_BREAK + 0.1 + k * 0.45, whoosh(0.4), 0.35)
+    for (et, kind, text) in film.term_schedule():
+        if kind != 'cmd':
+            continue
+        tt = film.V_TERM + et
+        for ch in range(len(text) - 2):
+            L = int(0.02 * SR)
+            click = lp_fast(noise(L), 3000) * np.exp(-np.arange(L) / 180)
+            m.add(tt + ch / film.TYPE_CPS + rng.uniform(-0.004, 0.004), click, 0.22, pan=rng.uniform(-0.3, 0.3))
 
     # credits
-    m.add(T_CREDITS, drone(4.6, 73.4, 0.3), 0.6)
-    hijaz(m, T_CREDITS + 0.4, 1.2)
+    m.add(film.V_CRED, drone(film.CRED_DUR, 73.4, 0.3), 0.6)
+    hijaz(m, film.V_CRED + 0.2, 1.1)
 
     buf = m.buf[: int(TOTAL * SR)]
     buf = buf / max(1e-6, np.percentile(np.abs(buf), 99.9))

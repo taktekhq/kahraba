@@ -1,0 +1,25 @@
+$ git diff --stat
+ light.wgsl         |  34 +++++++++--
+ main.luau          | 166 ++++++++++++++++++++++++++++++++++++++++++++++-------
+ scene.rml          |   2 +
+ tools/gen_scene.py |   2 +
+ 4 files changed, 178 insertions(+), 26 deletions(-)
+$ git diff -U0 scene.rml
+diff --git a/scene.rml b/scene.rml
+index 0fe37fb..40aa867 100644
+--- a/scene.rml
++++ b/scene.rml
+@@ -879,0 +880 @@
++        <ViewModelPropertyNumber name="view" id="0:914"/>
+@@ -893,0 +895 @@
++            <ViewModelInstanceNumber propertyValue="0" viewModelPropertyId="0:914"/>
+$ rive . --verify
+[21:30:08.445] rive  verified (0 bytes, 429ms, 0 errors, 0 warnings)
+$ rive . --screenshot=build/albedo.png --data=autoplay=1 --data=view=1 --advance=1032
+[21:30:08.625] rive  deferred replay: inline
+[21:30:09.162] rive  built build/kahraba.riv (923554 bytes, 536ms, 0 errors, 0 warnings)
+[21:30:09.171] rive  data: autoplay = 1
+[21:30:09.171] rive  data: view = 1
+[21:30:09.180] rive  showing Kahraba [1/1]
+[21:30:09.236] rive  viewport 1280x800 @1x
+[21:30:09.453] rive  wrote build/albedo.png

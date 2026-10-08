@@ -46,9 +46,9 @@ a:focus-visible, .btn:focus-visible { outline: 3px solid var(--color-accent); ou
 .skip { position: absolute; left: -999px; }
 .skip:focus { left: var(--space-s); top: var(--space-s); background: var(--color-accent); color: var(--color-accent-ink); padding: var(--space-2xs) var(--space-s); }
 .wrap { max-width: var(--container); margin: 0 auto; padding: 0 var(--space-s); }
-header { padding: var(--space-xl) 0 var(--space-l); }
+header { padding: clamp(56px, 40px + 4vw, 104px) 0 var(--space-l); }
 .title { display: flex; align-items: baseline; gap: var(--space-m); flex-wrap: wrap; }
-.ar { font-family: var(--font-display); color: var(--color-accent); font-size: calc(var(--text-5) * 1.5); line-height: 1; font-weight: 400; margin: 0; }
+.ar { font-family: var(--font-display); color: var(--color-accent); font-size: calc(var(--text-5) * 1.5); line-height: 1.25; font-weight: 400; margin: 0; }
 h1 { font-family: var(--font-display); font-weight: 400; font-size: var(--text-5); line-height: 1.1; letter-spacing: -0.02em; margin: 0; }
 .lede { font-size: var(--text-1); color: var(--color-text-muted); max-width: var(--measure); margin: var(--space-s) 0 0; }
 video, .still img { display: block; width: 100%; height: auto; border-radius: var(--radius-lg); background: #000; }
@@ -83,17 +83,17 @@ footer { padding: var(--space-3xl) 0 var(--space-xl); color: var(--color-text-mu
     <p class="ar" lang="ar" dir="rtl">كهربا</p>
     <h1>Kahraba</h1>
   </div>
-  <p class="lede">A Beirut power-cut ghost story. The state power cuts, and you hunt six jinn through an apartment building with your phone light. Made with Rive for the Rive Halloween Challenge.</p>
+  <p class="lede">8 PM in Beirut. The state power (<span lang="ar">كهربا الدولة</span>) browns out and cuts, the way it always does, and the jinn of an old sandstone building come to the windows: the Ghoul between the water tanks, the Si'lewa behind Umm Georges' laundry, the Qarina in the arches, an Ifrit born in generator smoke. Your phone light is all you have until Abu Ali's moteur coughs into life. Made with Rive for the Rive Halloween Challenge.</p>
 </header>
 <main id="main" class="wrap">
-  <video controls preload="metadata" poster="media/hero.jpg" width="1600" height="1000">
+  <video controls preload="metadata" poster="media/poster.jpg" width="1600" height="1000">
     <source src="media/kahraba.mp4" type="video/mp4">
   </video>
   <div class="actions">
     <a class="btn btn-primary" href="https://github.com/taktekhq/kahraba">Get the source and play it</a>
     <a class="btn btn-secondary" href="media/kahraba.mp4" download>Download the video</a>
   </div>
-  <p class="note">Play it locally: install the Rive CLI, clone the repo, run <code>rive .</code> in it. The pointer is your phone light. A hosted, playable link follows once the file is published with <code>rive --publish=web</code>, which signs the scripts and needs a Rive login.</p>
+  <p class="note">Play it: install the Rive CLI, clone the repo, run <code>rive .</code> in it. The pointer is your phone light; hold it on a pair of eyes. The video is 52 s with sound.</p>
 
   <section aria-labelledby="story">
     <h2 id="story">The story</h2>
@@ -113,7 +113,7 @@ footer { padding: var(--space-3xl) 0 var(--space-xl); color: var(--color-text-mu
     <div class="stills">
       <figure class="still"><img src="media/hero.jpg" width="1600" height="1000" loading="lazy" alt="In the power cut, the phone light finds the ghoul between the water tanks on the roof as it rears up"><figcaption>The light finds the Ghoul on the roof.</figcaption></figure>
       <figure class="still"><img src="media/still-lit.jpg" width="1600" height="1000" loading="lazy" alt="The lit apartment building before the cut, neighbours in the windows, a Lebanese flag on the roof"><figcaption>8 PM, state power on.</figcaption></figure>
-      <figure class="still"><img src="media/still-qarina.jpg" width="1600" height="1000" loading="lazy" alt="In the dark, the phone light finds the Qarina in the triple arch, lifting her own phone"><figcaption>The Qarina lifts her own phone.</figcaption></figure>
+      <figure class="still"><img src="media/still-qarina.jpg" width="1600" height="1000" loading="lazy" alt="Close-up in the dark: the phone light catches the Qarina in the triple arch as she lifts her own phone; her name card reads 3 of 6"><figcaption>Caught: the Qarina lifts her own phone back at you.</figcaption></figure>
       <figure class="still"><img src="media/still-battery-dead.jpg" width="1600" height="1000" loading="lazy" alt="The battery died: red and yellow eyes open in every window"><figcaption>The battery died.</figcaption></figure>
       <figure class="still"><img src="media/still-ending.jpg" width="1600" height="1000" loading="lazy" alt="The generator is on and six jinn sit on the parapet under the end card reading Happy Halloween from Beirut"><figcaption>Even the jinn pay the subscription.</figcaption></figure>
     </div>
@@ -124,8 +124,8 @@ footer { padding: var(--space-3xl) 0 var(--space-xl); color: var(--color-text-mu
     <p>Written in RML, Luau and WGSL with the Rive CLI, and rendered headless with it: every frame of the video is a <code>rive --screenshot</code>.</p>
     <table>
       <tr><th scope="row">Rive CLI + RML</th><td>The file is markup: text, HUD, cards, the inverter switch, the state machine and every keyed animation, verified with <code>rive . --verify</code>.</td></tr>
-      <tr><th scope="row">Scripting</th><td>A Luau layout script draws the street twice a frame (albedo and emission), runs the story clock, the torch, the six jinn and their reactions, sparks, smoke and the generator's rumble.</td></tr>
-      <tr><th scope="row">GPU Canvas</th><td>One WGSL pass lights it all: city glow or moonlight, window spill, the phone torch, a painted sky, bloom, fog, shake and grain.</td></tr>
+      <tr><th scope="row">Scripting</th><td>A Luau layout script runs the story clock, the torch, the six jinn (each caught one gathers itself, stretches, shudders and runs, while the camera moves in for a close-up), eyes that move between windows and shut when the light comes near, sparks, smoke and the generator's rumble.</td></tr>
+      <tr><th scope="row">GPU Canvas</th><td>The script draws the street twice a frame (albedo and emission) and one WGSL pass lights it: moonlight, window spill, the phone torch, a painted sky, bloom and fog. It also plays the story: the brownout before the cut (the voltage sags to a dirty orange), heat haze over the moteur's chimney with a stuttering sodium light, and the vignette closing in when the battery dies.</td></tr>
       <tr><th scope="row">Data binding</th><td>A view model carries power, phase, jinn found, battery, captions in English and Lebanese Arabic, and the street-light level that dims the neon signs.</td></tr>
       <tr><th scope="row">State machine</th><td>Four layers: the lever, the story, one card per jinn found, and the battery warning.</td></tr>
       <tr><th scope="row">Tuned by hand</th><td>Named ease curves for every keyed move, the lever's 240 ms overshoot and 3-frame plate knock, the card's elastic settle, the story's timing, the torch path, each jinn's pose and palette, all adjusted by eye against screenshots.</td></tr>
