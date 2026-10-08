@@ -106,4 +106,4 @@ git worktree add /tmp/kahraba-pages gh-pages && cp -r site/. media /tmp/kahraba-
   (`licenses/`).
 * Built with [Rive](https://rive.app) and the Rive CLI.
 
-Code and art: MIT (`LICENSE`).
+Code and art: MIT (`LICENSE`). The fonts are not covered by it; they are under the SIL OFL 1.1 (`licenses/`).
