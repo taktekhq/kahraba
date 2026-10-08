@@ -89,6 +89,15 @@ Headless Linux tip: if `rive --screenshot` says `eglInitialize failed (no displa
 Timeline of the film (seconds): 0 title, 3.2 how it's made (RML, Luau, WGSL, the CLI loop), 22.6 the piece
 (cut at 29.6, six catches, the moteur ending), 63.1 the battery-dies ending, 69.1 credits, 73.7 end.
 
+### The page
+
+`site/` plus `media/` is the `gh-pages` branch (served at https://taktek.io/kahraba/):
+
+```bash
+git worktree add /tmp/kahraba-pages gh-pages && cp -r site/. media /tmp/kahraba-pages/ \
+  && git -C /tmp/kahraba-pages commit -am "Update page" && git -C /tmp/kahraba-pages push
+```
+
 ## Credits
 
 * Concept, story, art direction and code: [Taktek](https://github.com/taktekhq), Beirut.
